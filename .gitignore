@@ -20,6 +20,10 @@ dist/CDiskCleaner/
 build_old_*/
 dist_old_*/
 
+# Certificates
+wzc-cert.cer
+wzc-cert.pfx
+
 # IDE
 .vscode/
 .idea/

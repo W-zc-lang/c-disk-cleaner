@@ -910,3 +910,240 @@ def clean_items(ids):
             results.append({"id": cid, "freed": freed, "errors": errs})
 
     return {"ok": True, "total_freed": total_freed, "results": results}
+
+
+# ---------------- 进程管理 / Process management ----------------
+_PROTECTED_PROCESSES = {
+    "system", "registry", "smss.exe", "csrss.exe", "wininit.exe",
+    "services.exe", "lsass.exe", "svchost.exe", "fontdrvhost.exe",
+    "dwm.exe", "winlogon.exe", "taskeng.exe", "searchindexer.exe",
+    "sihost.exe", "ctfmon.exe",
+}
+
+def list_processes():
+    """列出进程 (PID, name, memory). 不用 psutil, 用 tasklist CSV."""
+    procs = []
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FO", "CSV", "/NH"],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=30,
+        )
+        lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
+        for line in lines:
+            # "Image Name","PID","Session Name","Session#","Mem Usage"
+            parts = [p.strip('"').strip() for p in line.split('","')]
+            if len(parts) < 5:
+                continue
+            name, pid_s, _, _, mem_s = parts[0], parts[1], parts[2], parts[3], parts[4]
+            try:
+                pid = int(pid_s)
+            except ValueError:
+                continue
+            # parse "1,234 K" -> bytes
+            mem = 0
+            try:
+                mem_s = mem_s.replace(",", "").upper().replace("K", "").strip()
+                mem = int(float(mem_s) * 1024)
+            except ValueError:
+                pass
+            if pid == 0 or name.lower() in _PROTECTED_PROCESSES:
+                continue
+            procs.append({
+                "pid": pid,
+                "name": name,
+                "memory": mem,
+            })
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    procs.sort(key=lambda x: x["memory"], reverse=True)
+    return {"ok": True, "processes": procs, "count": len(procs)}
+
+
+def kill_process(pid):
+    """结束指定 PID 的进程."""
+    try:
+        pid = int(pid)
+    except (ValueError, TypeError):
+        return {"ok": False, "error": "invalid pid"}
+    if pid <= 0:
+        return {"ok": False, "error": "invalid pid"}
+    try:
+        r = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
+        )
+        if r.returncode == 0:
+            return {"ok": True, "pid": pid}
+        return {"ok": False, "pid": pid, "error": (r.stderr or r.stdout or "taskkill failed").strip()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ---------------- 开机管理 / Startup items ----------------
+import winreg
+
+_STARTUP_KEYS = [
+    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+    (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
+]
+
+def list_startup_items():
+    """读取注册表 Run 键作为开机启动项; 禁用通过重命名键名实现."""
+    items = []
+    seen = set()
+    for hkey, path in _STARTUP_KEYS:
+        try:
+            with winreg.OpenKey(hkey, path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                i = 0
+                while True:
+                    try:
+                        name, value, _ = winreg.EnumValue(key, i)
+                        i += 1
+                        origin = "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU"
+                        is_64 = "x64" if "WOW6432Node" not in path else "x86"
+                        enabled = not name.endswith("_disabled")
+                        key_id = f"{origin}_{is_64}_{name}"
+                        if key_id in seen:
+                            continue
+                        seen.add(key_id)
+                        items.append({
+                            "id": key_id,
+                            "name": name.replace("_disabled", ""),
+                            "command": str(value),
+                            "location": f"{origin} ({is_64})",
+                            "enabled": enabled,
+                            "hkey": "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU",
+                            "path": path,
+                            "value_name": name,
+                        })
+                    except OSError:
+                        break
+        except OSError:
+            continue
+    return {"ok": True, "items": items, "count": len(items)}
+
+
+def set_startup_enabled(hkey_str, path, value_name, enabled):
+    """启用/禁用注册表 Run 项. 通过改名 value_name 实现 (加/去 _disabled 后缀)."""
+    try:
+        hkey = winreg.HKEY_LOCAL_MACHINE if hkey_str == "HKLM" else winreg.HKEY_CURRENT_USER
+        access = winreg.KEY_READ | winreg.KEY_WRITE | winreg.KEY_WOW64_64KEY
+        with winreg.OpenKey(hkey, path, 0, access) as key:
+            try:
+                value, typ = winreg.QueryValueEx(key, value_name)
+            except OSError:
+                return {"ok": False, "error": "item not found"}
+            # 改名
+            base = value_name.replace("_disabled", "")
+            new_name = base if enabled else base + "_disabled"
+            if new_name == value_name:
+                return {"ok": True}
+            winreg.SetValueEx(key, new_name, 0, typ, value)
+            winreg.DeleteValue(key, value_name)
+        return {"ok": True, "enabled": enabled, "new_name": new_name}
+    except PermissionError:
+        return {"ok": False, "error": "permission denied (need admin to edit HKLM)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# ---------------- 全面体检 / System check ----------------
+def system_check():
+    """综合体检：磁盘空间、临时文件、回收站、内存、启动项、进程、大文件、重复文件; 给出 0-100 评分."""
+    issues = []
+    total = 0
+    def add(name, name_en, weight, bad, tip, tip_en):
+        nonlocal total
+        total += weight
+        issues.append({
+            "name": name, "name_en": name_en,
+            "weight": weight, "bad": bad,
+            "tip": tip, "tip_en": tip_en,
+        })
+
+    info = get_disk_info("C:")
+    used_pct = info["used"] / info["total"] if info["total"] else 0
+    add(
+        "C 盘空间", "C: drive space",
+        20,
+        used_pct > 0.85,
+        "C 盘已用超过 85%，建议清理" if used_pct > 0.85 else "C 盘空间正常",
+        "C: drive usage over 85%, consider cleanup" if used_pct > 0.85 else "C: drive space OK",
+    )
+
+    try:
+        ti = list_items()
+        cleanable = sum(it.get("size", 0) for it in _flatten_items(ti))
+        add(
+            "可清理垃圾", "Cleanable junk",
+            20,
+            cleanable > 2 * 1024**3,
+            f"可清理 {fmt_bytes(cleanable)} 垃圾" if cleanable else "暂无垃圾",
+            f"{fmt_bytes(cleanable)} cleanable" if cleanable else "No junk found",
+        )
+    except Exception:
+        add("可清理垃圾", "Cleanable junk", 20, False, "扫描失败", "Scan failed")
+
+    try:
+        mem = get_memory_info()
+        add(
+            "内存占用", "Memory usage",
+            15,
+            mem["percent"] > 85,
+            f"内存占用 {mem['percent']}%" if mem["percent"] > 60 else "内存占用正常",
+            f"Memory usage {mem['percent']}%" if mem["percent"] > 60 else "Memory usage OK",
+        )
+    except Exception:
+        add("内存占用", "Memory usage", 15, False, "获取失败", "Read failed")
+
+    try:
+        su = list_startup_items()
+        boot_count = su.get("count", 0)
+        add(
+            "开机启动项", "Startup items",
+            10,
+            boot_count > 12,
+            f"有 {boot_count} 个开机启动项" if boot_count else "无启动项",
+            f"{boot_count} startup items" if boot_count else "No startup items",
+        )
+    except Exception:
+        add("开机启动项", "Startup items", 10, False, "获取失败", "Read failed")
+
+    try:
+        procs = list_processes()
+        proc_count = procs.get("count", 0)
+        add(
+            "运行进程", "Running processes",
+            10,
+            proc_count > 150,
+            f"有 {proc_count} 个进程运行中" if proc_count else "无进程信息",
+            f"{proc_count} processes running" if proc_count else "No process info",
+        )
+    except Exception:
+        add("运行进程", "Running processes", 10, False, "获取失败", "Read failed")
+
+    try:
+        rb_size, rb_count = recycle_bin_info("C:")
+        add(
+            "回收站", "Recycle Bin",
+            15,
+            rb_size > 1024**3 or rb_count > 100,
+            f"回收站有 {fmt_bytes(rb_size)} ({rb_count} 项)" if rb_count else "回收站为空",
+            f"Recycle Bin {fmt_bytes(rb_size)} ({rb_count} items)" if rb_count else "Recycle Bin empty",
+        )
+    except Exception:
+        add("回收站", "Recycle Bin", 15, False, "获取失败", "Read failed")
+
+    # 扣分制
+    bad_score = sum(it["weight"] for it in issues if it["bad"])
+    score = max(0, 100 - bad_score)
+    return {"ok": True, "score": score, "issues": issues}
+
+
+def _flatten_items(items):
+    out = []
+    for it in items:
+        out.append(it)
+        out.extend(it.get("children", []))
+    return out

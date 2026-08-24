@@ -118,7 +118,7 @@ function initNav() {
     el.addEventListener("click", () => {
       const view = el.dataset.view;
       setNavActive(view);
-      if (view === "storage") {
+      if (view === "storage" || view === "home") {
         showView("dashboard");
       } else if (view === "settings") {
         showView("settings");
@@ -137,23 +137,10 @@ function initNav() {
   });
   $("analyzeBtn").addEventListener("click", () => openDetail("deep"));
   document.querySelectorAll(".action-card").forEach((card) => {
-    card.addEventListener("click", (e) => {
-      if (e.target.tagName === "BUTTON" || e.target.tagName === "SELECT") return;
-      openDetail(card.dataset.detail);
-    });
+    card.addEventListener("click", () => openDetail(card.dataset.detail));
   });
-  $("deepScanBtn").addEventListener("click", (e) => {
-    e.stopPropagation();
-    openDetail("deep");
-  });
-  $("largeDriveSelect").addEventListener("change", (e) => {
-    currentDrive = e.target.value;
-    scanLargePreview();
-  });
-  $("dupDriveSelect").addEventListener("change", (e) => {
-    currentDrive = e.target.value;
-    scanDupPreview();
-  });
+  $("boostBtn").addEventListener("click", doBoost);
+  $("boostDoneBtn").addEventListener("click", resetBoost);
 }
 
 function openDetail(mode) {
@@ -164,7 +151,9 @@ function openDetail(mode) {
     downloads: "下载文件 / Downloads",
     large: "大文件 / Large Files",
     duplicate: "重复文件 / Duplicate Files",
-    sense: "存储感知 / Storage Sense",
+    checkup: "全面体检 / System Checkup",
+    processes: "进程管理 / Process Manager",
+    startup: "开机管理 / Startup Manager",
   };
   $("detailTitle").textContent = titleMap[mode] || "详情 / Detail";
   const content = $("detailContent");
@@ -174,7 +163,9 @@ function openDetail(mode) {
   else if (mode === "large") renderLargeFiles(content);
   else if (mode === "duplicate") renderDuplicateFiles(content);
   else if (mode === "downloads") renderDownloads(content);
-  else if (mode === "sense") renderStorageSense(content);
+  else if (mode === "checkup") renderCheckup(content);
+  else if (mode === "processes") renderProcesses(content);
+  else if (mode === "startup") renderStartup(content);
 }
 
 // ---------------- 深度清理 / Deep clean ----------------
@@ -612,7 +603,7 @@ async function doDeleteDup() {
   }
 }
 
-// ---------------- 下载文件 & 存储感知（占位/简化） ----------------
+// ---------------- 下载文件（占位） ----------------
 function renderDownloads(container) {
   container.innerHTML = `
     <div class="empty">
@@ -620,19 +611,6 @@ function renderDownloads(container) {
       <span class="en">Downloads cleanup is coming soon.</span>
     </div>
   `;
-}
-
-function renderStorageSense(container) {
-  container.innerHTML = `
-    <div class="empty">
-      存储感知：自动释放空间、删除临时文件。<br>
-      <span class="en">Storage Sense: automatically free up space and delete temp files.</span>
-    </div>
-    <div style="margin-top:12px;text-align:center;">
-      <button id="senseBoostBtn" class="btn primary">立即加速 / Quick Boost</button>
-    </div>
-  `;
-  $("senseBoostBtn").addEventListener("click", doBoost);
 }
 
 // ---------------- 快速加速 / Quick boost ----------------
@@ -648,20 +626,274 @@ async function updateMemory() {
   }
 }
 
+function resetBoost() {
+  $("boostDoneBtn").classList.add("hidden");
+  $("boostBtn").classList.remove("hidden");
+  $("boostResult").classList.add("hidden");
+  $("boostResult").textContent = "";
+  updateMemory();
+}
+
 async function doBoost() {
-  $("boostBtn").disabled = true;
-  $("boostBtn").textContent = "加速中… / Boosting…";
+  // 1. 显示动画
+  $("boostBtn").classList.add("hidden");
+  $("boostDoneBtn").classList.add("hidden");
+  $("boostResult").classList.add("hidden");
+  const anim = $("boostAnim");
+  anim.classList.remove("hidden");
+  const circle = $("boostCircleFg");
+  const percent = $("boostPercent");
+
+  const duration = 2200;
+  const start = performance.now();
+  const circumference = 2 * Math.PI * 42; // ~264
+  circle.style.strokeDasharray = circumference;
+  circle.style.strokeDashoffset = circumference;
+
+  return new Promise((resolve) => {
+    function frame(now) {
+      const elapsed = now - start;
+      const p = Math.min(1, elapsed / duration);
+      const pct = Math.round(p * 100);
+      circle.style.strokeDashoffset = circumference * (1 - p);
+      percent.textContent = pct + "%";
+      if (p < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  }).then(async () => {
+    // 2. 动画结束，调用实际加速
+    try {
+      const r = await api().quick_boost();
+      anim.classList.add("hidden");
+      if (!r.ok) {
+        $("boostResult").textContent = "加速失败 / Boost failed: " + r.error;
+        $("boostResult").classList.remove("hidden");
+        $("boostBtn").classList.remove("hidden");
+        return;
+      }
+      // 3. 显示加速完成按钮 + 结果
+      $("boostDoneBtn").classList.remove("hidden");
+      $("boostResult").innerHTML = `释放 ${fmt(r.freed)} · 内存 ${r.memory.percent}%`;
+      $("boostResult").classList.remove("hidden");
+      updateMemory();
+      loadDiskInfo(currentDrive);
+    } catch (e) {
+      anim.classList.add("hidden");
+      $("boostResult").textContent = "错误 / Error: " + e;
+      $("boostResult").classList.remove("hidden");
+      $("boostBtn").classList.remove("hidden");
+    }
+  });
+}
+
+// ---------------- 首页预览 / Home previews ----------------
+async function loadHomePreviews() {
+  // 深度清理可清理大小
   try {
-    const r = await api().quick_boost();
-    if (!r.ok) { alert("加速失败 / Boost failed: " + r.error); return; }
-    alert(`加速完成 / Boost done\n释放 / Freed: ${fmt(r.freed)}\n内存 / Memory: ${r.memory.percent}%`);
-    updateMemory();
-    loadDiskInfo(currentDrive);
+    const r = await api().scan();
+    if (r.ok && r.items) {
+      const flat = flattenItems(r.items);
+      const total = flat.reduce((a, b) => a + (b.size || 0), 0);
+      $("deepSize").textContent = fmt(total);
+      // 也更新应用子项全局变量
+      items = r.items;
+      admin = r.admin;
+    }
+  } catch (e) { console.error(e); }
+
+  // 大文件预览
+  try {
+    const r = await api().scan_large_files(1.0, currentDrive);
+    if (r.ok && r.files) {
+      const total = r.files.reduce((a, f) => a + f.size, 0);
+      if (r.files.length) {
+        $("largeSub").innerHTML = `发现 <strong>${r.files.length}</strong> 个大文件 · 共 <strong>${fmt(total)}</strong>`;
+      } else {
+        $("largeSub").textContent = "未发现大于 1 GB 的文件";
+      }
+    }
+  } catch (e) { console.error(e); }
+
+  // 重复文件预览
+  try {
+    const r = await api().scan_duplicate_files(currentDrive);
+    if (r.ok && r.groups) {
+      const total = r.groups.reduce((a, g) => a + (g.total_size - g.size), 0);
+      if (r.groups.length) {
+        $("dupSub").innerHTML = `发现 <strong>${r.groups.length}</strong> 组重复文件 · 可释放 <strong>${fmt(total)}</strong>`;
+      } else {
+        $("dupSub").textContent = "未发现重复文件";
+      }
+    }
+  } catch (e) { console.error(e); }
+}
+
+// ---------------- 全面体检 / System checkup ----------------
+function renderCheckup(container) {
+  container.innerHTML = `
+    <div class="toolbar">
+      <span class="total" id="checkupScore" style="font-size:16px;font-weight:700;color:var(--accent-dark)">评分: —</span>
+      <button id="checkupBtn" class="btn primary">立即体检 / Check now</button>
+    </div>
+    <div id="checkupList" class="list"><div class="empty">点击"立即体检"开始全面检查。<br><span class="en">Click "Check now" to run a full system check.</span></div></div>
+  `;
+  $("checkupBtn").addEventListener("click", doCheckup);
+}
+
+async function doCheckup() {
+  const btn = $("checkupBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "体检中… / Checking…"; }
+  const list = $("checkupList");
+  list.innerHTML = '<div class="empty">正在全面体检，请稍候…<br><span class="en">Running system checkup…</span></div>';
+  try {
+    const r = await api().system_check();
+    if (btn) { btn.disabled = false; btn.textContent = "重新体检 / Check again"; }
+    if (!r.ok) {
+      list.innerHTML = '<div class="empty err">体检失败 / Check failed: ' + r.error + "</div>";
+      return;
+    }
+    $("checkupScore").textContent = `健康评分 / Score: ${r.score}`;
+    $("checkupScore").style.color = r.score >= 80 ? "var(--ok)" : (r.score >= 60 ? "var(--warn)" : "var(--danger)");
+    localStorage.setItem("cdcleaner_last_check", new Date().toLocaleDateString("zh-CN"));
+    $("checkupDate").textContent = localStorage.getItem("cdcleaner_last_check");
+    list.innerHTML = "";
+    r.issues.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "card" + (it.bad ? " need-admin" : "");
+      row.innerHTML = `
+        <div class="card-main">
+          <div class="card-text">
+            <div class="title">${it.name} <span class="en">${it.name_en}</span></div>
+            <div class="note">${it.tip} <span class="en">${it.tip_en}</span></div>
+          </div>
+          <div class="size" style="color:${it.bad ? 'var(--danger)' : 'var(--ok)'}">${it.bad ? "需优化" : "正常"}</div>
+        </div>
+      `;
+      list.appendChild(row);
+    });
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "立即体检 / Check now"; }
+    list.innerHTML = '<div class="empty err">错误 / Error: ' + e + "</div>";
+  }
+}
+
+// ---------------- 进程管理 / Process manager ----------------
+function renderProcesses(container) {
+  container.innerHTML = `
+    <div class="toolbar">
+      <span class="total" id="procTotal">进程数 / Processes: —</span>
+      <button id="procRefreshBtn" class="btn primary">刷新 / Refresh</button>
+    </div>
+    <div id="procList" class="file-table"><div class="empty">点击刷新获取进程列表。<br><span class="en">Click refresh to load processes.</span></div></div>
+  `;
+  $("procRefreshBtn").addEventListener("click", loadProcesses);
+  loadProcesses();
+}
+
+async function loadProcesses() {
+  const list = $("procList");
+  list.innerHTML = '<div class="empty">正在获取进程列表…<br><span class="en">Loading processes…</span></div>';
+  try {
+    const r = await api().list_processes();
+    if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
+    $("procTotal").textContent = `进程数 / Processes: ${r.count}`;
+    if (!r.processes.length) {
+      list.innerHTML = '<div class="empty">未找到非系统进程。<br><span class="en">No non-system processes found.</span></div>';
+      return;
+    }
+    list.innerHTML = "";
+    r.processes.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "file-row";
+      row.innerHTML = `
+        <div class="file-info"><div class="file-name">${p.name}</div><div class="file-path">PID ${p.pid}</div></div>
+        <div class="file-size">${fmt(p.memory)}</div>
+        <button class="btn danger" data-pid="${p.pid}">结束 / End</button>
+      `;
+      row.querySelector("button").addEventListener("click", (e) => {
+        e.stopPropagation();
+        killProc(p.pid, p.name);
+      });
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty err">错误 / Error: ' + e + "</div>";
+  }
+}
+
+async function killProc(pid, name) {
+  if (!confirm(`确认结束进程 "${name}" (PID ${pid})？\nEnd process "${name}" (PID ${pid})?`)) return;
+  try {
+    const r = await api().kill_process(pid);
+    if (!r.ok) { alert("结束进程失败 / Failed: " + (r.error || "unknown")); }
+    loadProcesses();
   } catch (e) {
     alert("错误 / Error: " + e);
-  } finally {
-    $("boostBtn").disabled = false;
-    $("boostBtn").textContent = "立即加速";
+  }
+}
+
+// ---------------- 开机管理 / Startup manager ----------------
+function renderStartup(container) {
+  container.innerHTML = `
+    <div class="toolbar">
+      <span class="total" id="startupTotal">启动项 / Startup items: —</span>
+      <button id="startupRefreshBtn" class="btn primary">刷新 / Refresh</button>
+    </div>
+    <div id="startupList" class="file-table"><div class="empty">点击刷新获取开机启动项。<br><span class="en">Click refresh to load startup items.</span></div></div>
+  `;
+  $("startupRefreshBtn").addEventListener("click", loadStartupItems);
+  loadStartupItems();
+}
+
+async function loadStartupItems() {
+  const list = $("startupList");
+  list.innerHTML = '<div class="empty">正在获取开机启动项…<br><span class="en">Loading startup items…</span></div>';
+  try {
+    const r = await api().list_startup_items();
+    if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
+    $("startupTotal").textContent = `启动项 / Startup items: ${r.count}`;
+    if (!r.items.length) {
+      list.innerHTML = '<div class="empty">未发现注册表启动项。<br><span class="en">No registry startup items found.</span></div>';
+      return;
+    }
+    list.innerHTML = "";
+    r.items.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "file-row";
+      row.innerHTML = `
+        <div class="file-info" style="flex:1.2">
+          <div class="file-name">${it.name}</div>
+          <div class="file-path">${it.command}</div>
+        </div>
+        <div class="file-size" style="font-size:12px;color:var(--muted)">${it.location}</div>
+        <div class="file-size" style="color:${it.enabled ? 'var(--ok)' : 'var(--muted)'}">${it.enabled ? "已启用" : "已禁用"}</div>
+        <button class="btn ${it.enabled ? 'ghost' : 'primary'}" data-id="${it.id}">${it.enabled ? "禁用 / Disable" : "启用 / Enable"}</button>
+      `;
+      row.querySelector("button").addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleStartup(it, !it.enabled);
+      });
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="empty err">错误 / Error: ' + e + "</div>";
+  }
+}
+
+async function toggleStartup(it, enabled) {
+  try {
+    const r = await api().set_startup_enabled(it.hkey, it.path, it.value_name, enabled);
+    if (!r.ok) { alert("操作失败 / Failed: " + (r.error || "unknown")); }
+    loadStartupItems();
+    // 刷新首页计数
+    const rr = await api().list_startup_items();
+    if (rr.ok) $("startupCount").textContent = rr.count;
+  } catch (e) {
+    alert("错误 / Error: " + e);
   }
 }
 
@@ -673,13 +905,11 @@ $("confirmBtn").addEventListener("click", doClean);
 function init() {
   apiReady = true;
   initNav();
-  $("boostBtn").addEventListener("click", doBoost);
   loadDrives().then(() => {
     currentDrive = drives.includes("C:") ? "C:" : drives[0];
     loadDiskInfo(currentDrive);
-    scanLargePreview();
-    scanDupPreview();
   });
+  loadHomePreviews();
   updateAdminChip();
   updateMemory();
 }

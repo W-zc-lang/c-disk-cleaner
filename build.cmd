@@ -19,7 +19,6 @@ if not exist "%PY%" (
   --icon "src\gui\assets\icon.ico" ^
   --add-data "src\gui;gui" ^
   --hidden-import webview ^
-  --clean ^
   src/main.py
 
 echo.

@@ -22,10 +22,6 @@
           <span class="nav-icon">🏠</span>
           <span>首页<br /><span class="nav-en">Home</span></span>
         </a>
-        <a class="nav-item" data-view="protect">
-          <span class="nav-icon">🛡️</span>
-          <span>保护<br /><span class="nav-en">Protection</span></span>
-        </a>
         <a class="nav-item active" data-view="storage">
           <span class="nav-icon">💾</span>
           <span>存储<br /><span class="nav-en">Storage</span></span>
@@ -33,18 +29,6 @@
         <a class="nav-item" data-view="apps">
           <span class="nav-icon">📦</span>
           <span>应用<br /><span class="nav-en">Apps</span></span>
-        </a>
-        <a class="nav-item" data-view="ai">
-          <span class="nav-icon">✨</span>
-          <span>AI工具<br /><span class="nav-en">AI Tools</span></span>
-        </a>
-        <a class="nav-item" data-view="repair">
-          <span class="nav-icon">🔧</span>
-          <span>修复建议<br /><span class="nav-en">Repair</span></span>
-        </a>
-        <a class="nav-item" data-view="claw">
-          <span class="nav-icon">🐾</span>
-          <span>Claw看板<br /><span class="nav-en">Claw</span></span>
         </a>
         <div class="nav-divider"></div>
         <a class="nav-item" data-view="settings">
@@ -68,6 +52,36 @@
 
       <!-- 仪表盘 / Dashboard -->
       <section id="dashboard" class="view">
+        <!-- 一键加速 / Quick boost hero -->
+        <div class="boost-hero" id="boostHero">
+          <div class="boost-bg-icon">🚀</div>
+          <div class="boost-left">
+            <div class="boost-title">一键加速 / Quick Boost</div>
+            <div class="boost-desc">清理临时文件、刷新 DNS、整理空闲任务</div>
+            <div class="boost-result hidden" id="boostResult"></div>
+          </div>
+          <div class="boost-right">
+            <div class="boost-mem">
+              <div class="mem-label">内存占用 / Memory <span id="memText">—</span></div>
+              <div class="mem-bar"><div id="memBar"></div></div>
+            </div>
+            <button class="btn primary" id="boostBtn">立即加速</button>
+            <button class="btn ok hidden" id="boostDoneBtn">加速完成</button>
+          </div>
+
+          <!-- 加速动画层 / Boost animation overlay -->
+          <div id="boostAnim" class="boost-anim hidden">
+            <div class="boost-circle">
+              <svg viewBox="0 0 100 100">
+                <circle class="boost-circle-bg" cx="50" cy="50" r="42"/>
+                <circle class="boost-circle-fg" id="boostCircleFg" cx="50" cy="50" r="42"/>
+              </svg>
+              <div class="boost-percent" id="boostPercent">0%</div>
+            </div>
+            <div class="boost-anim-text">正在加速…<br><span class="en">Boosting…</span></div>
+          </div>
+        </div>
+
         <!-- 磁盘容量卡 / Disk info -->
         <div class="disk-card">
           <div class="disk-header">
@@ -83,72 +97,42 @@
           <div class="disk-legend" id="diskLegend"></div>
         </div>
 
-        <!-- 操作卡片 / Action cards -->
+        <!-- 功能操作 / Action cards -->
         <div class="cards-grid">
           <div class="action-card" data-detail="deep">
             <div class="action-icon deep">🧹</div>
             <div class="action-body">
-              <div class="action-title">深度清理</div>
-              <div class="action-sub" id="deepSub">清理系统无用文件等</div>
-            </div>
-            <button class="btn primary" id="deepScanBtn">扫描</button>
-          </div>
-
-          <div class="action-card" data-detail="downloads">
-            <div class="action-icon download">📥</div>
-            <div class="action-body">
-              <div class="action-title">下载文件</div>
-              <div class="action-sub">扫描电脑中的下载文件</div>
+              <div class="action-title">深度清理 <span class="en">Deep Clean</span></div>
+              <div class="action-sub" id="deepSub"><span id="deepDrive">BOOTCAMP (C:)</span> <strong id="deepSize">—</strong> 可清理</div>
             </div>
             <span class="arrow-right muted">›</span>
           </div>
 
           <div class="action-card" data-detail="large">
-            <div class="action-icon large">📄</div>
+            <div class="action-icon large">📁</div>
             <div class="action-body">
-              <div class="action-title">大文件</div>
-              <div class="action-sub" id="largeSub">超过 <strong>—</strong> 大文件可清理</div>
-            </div>
-            <div class="action-controls">
-              <select id="largeDriveSelect" class="drive-select"></select>
-              <span class="arrow-right muted">›</span>
-            </div>
-          </div>
-
-          <div class="action-card" data-detail="duplicate">
-            <div class="action-icon dup">📑</div>
-            <div class="action-body">
-              <div class="action-title">重复文件</div>
-              <div class="action-sub" id="dupSub">超过 <strong>—</strong> 重复文件可清理</div>
-            </div>
-            <div class="action-controls">
-              <select id="dupDriveSelect" class="drive-select"></select>
-              <span class="arrow-right muted">›</span>
-            </div>
-          </div>
-
-          <div class="action-card" data-detail="sense">
-            <div class="action-icon sense">🧠</div>
-            <div class="action-body">
-              <div class="action-title">存储感知</div>
-              <div class="action-sub">自动释放空间、删除临时文件</div>
+              <div class="action-title">大文件 <span class="en">Large Files</span></div>
+              <div class="action-sub" id="largeSub">点击扫描查找大于 1 GB 的文件</div>
             </div>
             <span class="arrow-right muted">›</span>
           </div>
-        </div>
 
-        <!-- 快速加速 / Quick boost -->
-        <div class="boost-panel">
-          <div class="boost-left">
-            <div class="boost-label">快速加速 / Quick Boost</div>
-            <div class="boost-desc">清理临时文件、刷新 DNS、整理空闲任务</div>
-          </div>
-          <div class="boost-right">
-            <div class="boost-mem">
-              <div class="mem-label">内存占用 / Memory <span id="memText">—</span></div>
-              <div class="mem-bar"><div id="memBar"></div></div>
+          <div class="action-card" data-detail="duplicate">
+            <div class="action-icon dup">🗂️</div>
+            <div class="action-body">
+              <div class="action-title">重复文件 <span class="en">Duplicate Files</span></div>
+              <div class="action-sub" id="dupSub">点击扫描查找重复文件</div>
             </div>
-            <button class="btn primary" id="boostBtn">立即加速</button>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="action-card" data-detail="downloads">
+            <div class="action-icon download">📥</div>
+            <div class="action-body">
+              <div class="action-title">下载文件 <span class="en">Downloads</span></div>
+              <div class="action-sub">清理下载文件夹中的文件</div>
+            </div>
+            <span class="arrow-right muted">›</span>
           </div>
         </div>
       </section>
