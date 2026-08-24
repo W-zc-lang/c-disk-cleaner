@@ -24,6 +24,7 @@ function api() { return window.pywebview.api; }
 function showView(name) {
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   if (name === "dashboard") $("dashboard").classList.remove("hidden");
+  if (name === "storage") $("storageView").classList.remove("hidden");
   if (name === "detail") $("detailView").classList.remove("hidden");
   if (name === "settings") $("settingsView").classList.remove("hidden");
   if (name === "placeholder") $("placeholderView").classList.remove("hidden");
@@ -118,8 +119,11 @@ function initNav() {
     el.addEventListener("click", () => {
       const view = el.dataset.view;
       setNavActive(view);
-      if (view === "storage" || view === "home") {
+      if (view === "home") {
         showView("dashboard");
+      } else if (view === "storage") {
+        showView("storage");
+        loadStoragePreviews();
       } else if (view === "settings") {
         showView("settings");
       } else {
@@ -129,15 +133,31 @@ function initNav() {
   });
   $("placeholderBack").addEventListener("click", () => {
     setNavActive("storage");
-    showView("dashboard");
+    showView("storage");
   });
   $("backBtn").addEventListener("click", () => {
     detailMode = null;
-    showView("dashboard");
+    const activeNav = document.querySelector(".nav-item.active");
+    const navView = activeNav ? activeNav.dataset.view : "home";
+    if (navView === "storage") {
+      showView("storage");
+    } else {
+      showView("dashboard");
+    }
   });
   $("analyzeBtn").addEventListener("click", () => openDetail("deep"));
   document.querySelectorAll(".action-card").forEach((card) => {
     card.addEventListener("click", () => openDetail(card.dataset.detail));
+  });
+  document.querySelectorAll(".feature-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.tagName === "BUTTON" || e.target.tagName === "SELECT") return;
+      openDetail(card.dataset.detail);
+    });
+  });
+  $("deepScanBtn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    openDetail("deep");
   });
   $("boostBtn").addEventListener("click", doBoost);
   $("boostDoneBtn").addEventListener("click", resetBoost);
@@ -692,7 +712,53 @@ async function doBoost() {
 
 // ---------------- 首页预览 / Home previews ----------------
 async function loadHomePreviews() {
-  // 深度清理可清理大小
+  // 全面体检日期
+  const last = localStorage.getItem("cdcleaner_last_check") || "—";
+  $("checkupDate").textContent = last;
+
+  // 深度清理可清理大小（首页）
+  try {
+    const r = await api().scan();
+    if (r.ok && r.items) {
+      const flat = flattenItems(r.items);
+      const total = flat.reduce((a, b) => a + (b.size || 0), 0);
+      $("deepSizeHome").textContent = fmt(total);
+      // 也更新应用子项全局变量
+      items = r.items;
+      admin = r.admin;
+    }
+  } catch (e) { console.error(e); }
+
+  // 进程数
+  try {
+    const r = await api().list_processes();
+    if (r.ok) {
+      $("processSub").innerHTML = `进行中 <strong>${r.count}</strong> 个进程`;
+    }
+  } catch (e) { console.error(e); }
+
+  // 启动项数
+  try {
+    const r = await api().list_startup_items();
+    if (r.ok) {
+      $("startupCount").textContent = r.count;
+    }
+  } catch (e) { console.error(e); }
+
+  // 开机时间占位
+  $("startupSub").innerHTML = `开机时间 <strong>—</strong> 秒 · <strong>${$("startupCount").textContent}</strong> 个启动项`;
+}
+
+// ---------------- 存储页预览 / Storage previews ----------------
+async function loadStoragePreviews() {
+  // 磁盘信息
+  try {
+    await loadDrives();
+    currentDrive = drives.includes("C:") ? "C:" : drives[0];
+    loadDiskInfo(currentDrive);
+  } catch (e) { console.error(e); }
+
+  // 深度清理可清理大小（存储页）
   try {
     const r = await api().scan();
     if (r.ok && r.items) {
@@ -907,7 +973,6 @@ function init() {
   initNav();
   loadDrives().then(() => {
     currentDrive = drives.includes("C:") ? "C:" : drives[0];
-    loadDiskInfo(currentDrive);
   });
   loadHomePreviews();
   updateAdminChip();

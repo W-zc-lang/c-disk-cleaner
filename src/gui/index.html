@@ -50,7 +50,7 @@
         <div class="admin-chip" id="adminChip">检查权限中…</div>
       </header>
 
-      <!-- 仪表盘 / Dashboard -->
+      <!-- 首页 / Home -->
       <section id="dashboard" class="view">
         <!-- 一键加速 / Quick boost hero -->
         <div class="boost-hero" id="boostHero">
@@ -82,6 +82,56 @@
           </div>
         </div>
 
+        <!-- 功能入口 / Feature cards -->
+        <div class="feature-grid">
+          <div class="feature-card" data-detail="checkup">
+            <div class="feature-main">
+              <div class="feature-icon checkup">🖥️</div>
+              <div class="feature-body">
+                <div class="feature-title">全面体检</div>
+                <div class="feature-sub" id="checkupSub">上次检查 <span id="checkupDate">—</span></div>
+              </div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="feature-card" data-detail="processes">
+            <div class="feature-main">
+              <div class="feature-icon processes">🧮</div>
+              <div class="feature-body">
+                <div class="feature-title">进程管理</div>
+                <div class="feature-sub" id="processSub">进行中 <strong>—</strong> 个进程</div>
+              </div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="feature-card" data-detail="deep">
+            <div class="feature-main">
+              <div class="feature-icon deep">🧹</div>
+              <div class="feature-body">
+                <div class="feature-title">深度清理</div>
+                <div class="feature-sub" id="deepSubHome"><span id="deepDriveHome">BOOTCAMP (C:)</span> <strong id="deepSizeHome">—</strong> 可清理</div>
+              </div>
+            </div>
+            <button class="btn primary" id="deepScanBtn">扫描</button>
+          </div>
+
+          <div class="feature-card" data-detail="startup">
+            <div class="feature-main">
+              <div class="feature-icon startup">⏻</div>
+              <div class="feature-body">
+                <div class="feature-title">开机管理</div>
+                <div class="feature-sub" id="startupSub">开机时间 <strong>—</strong> 秒 · <strong id="startupCount">—</strong> 个启动项</div>
+              </div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 存储页 / Storage -->
+      <section id="storageView" class="view hidden">
         <!-- 磁盘容量卡 / Disk info -->
         <div class="disk-card">
           <div class="disk-header">
