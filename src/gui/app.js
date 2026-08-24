@@ -945,7 +945,7 @@ async function killProc(pid, name) {
 function renderStartup(container) {
   container.innerHTML = `
     <div class="startup-header">
-      <div class="startup-title">本次开机耗时<strong id="bootTime">—</strong>秒</div>
+      <div class="startup-title">预估启动耗时<strong id="bootTime">—</strong>秒（仅估算）</div>
     </div>
     <div id="startupList" class="startup-list"><div class="empty">正在获取开机启动项…<br><span class="en">Loading startup items…</span></div></div>
   `;
@@ -960,20 +960,24 @@ async function loadStartupItems() {
     if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
     const bootTimeEl = $("bootTime");
     if (bootTimeEl) {
-      // 估算总启动耗时：所有已知项的 impact 之和
-      const totalImpact = r.items.reduce((a, it) => a + (it.impact || 0), 0);
+      // 估算总启动耗时：所有已启用项的 impact 之和
+      const totalImpact = r.items.filter((x) => x.enabled).reduce((a, it) => a + (it.impact || 0), 0);
       bootTimeEl.textContent = totalImpact > 0 ? totalImpact.toFixed(1) : "—";
     }
     if (!r.items.length) {
-      list.innerHTML = '<div class="empty">未发现注册表启动项。<br><span class="en">No registry startup items found.</span></div>';
+      list.innerHTML = '<div class="empty">未发现开机启动项。<br><span class="en">No startup items found.</span></div>';
       return;
     }
     list.innerHTML = "";
     r.items.forEach((it) => {
       const row = document.createElement("div");
       row.className = "startup-row";
-      const impactText = it.impact ? `启动耗时：${it.impact}秒` : "启动耗时未知";
-      const subText = it.enabled ? `${impactText}<br>可以选择关闭` : "已禁用";
+      const lvl = it.impact_level || "中";
+      const lvlColor = lvl === "高" ? "var(--danger)" : (lvl === "中" ? "var(--warn)" : "var(--ok)");
+      const impactText = it.impact ? `预估 ${it.impact}秒` : "预估 —";
+      const subText = it.enabled
+        ? `影响 <strong style="color:${lvlColor}">${lvl}</strong> · ${impactText}<br>${it.location || ""}`
+        : `已禁用<br>${it.location || ""}`;
       row.innerHTML = `
         <div class="startup-icon">${it.icon || "🔲"}</div>
         <div class="startup-info">
@@ -1000,7 +1004,7 @@ async function loadStartupItems() {
 
 async function toggleStartup(it, enabled) {
   try {
-    const r = await api().set_startup_enabled(it.hkey, it.path, it.value_name, enabled);
+    const r = await api().set_startup_state(it, enabled);
     if (!r.ok) { alert("操作失败 / Failed: " + (r.error || "unknown")); }
     loadStartupItems();
     loadAppsHomePreviews();

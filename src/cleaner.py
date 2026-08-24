@@ -1004,6 +1004,13 @@ _STARTUP_KNOWN = {
     "douyin": ("抖音", "🎵", 1.0),
     "weixin": ("微信", "💬", 1.2),
     "qq": ("QQ", "🐧", 2.5),
+    "qqnt": ("QQ", "🐧", 2.5),
+    "wxwork": ("企业微信", "💼", 1.5),
+    "weixin": ("微信", "💬", 1.2),
+    "cloudmusic": ("网易云音乐", "🎵", 1.5),
+    "sodamusic": ("网易云音乐", "🎵", 1.5),
+    "uc": ("UC", "🌐", 1.0),
+    "microsoftedgeautolaunch": ("Edge 自动启动", "🌐", 0.5),
     "qqpctray": ("QQ 电脑管家", "🛡️", 1.5),
     "java update scheduler": ("Java Update Scheduler", "☕", 0.8),
     "gaijin.net updater": ("Gaijin Updater", "🎮", 1.0),
@@ -1018,32 +1025,94 @@ _STARTUP_KNOWN = {
     "watt": ("Watt Toolkit", "🔧", 0.8),
 }
 
-def _startup_display_name(name):
-    """把注册表键名映射为可读显示名; 未知则返回键名首字母大写."""
+def _startup_meta(name):
+    """返回 (显示名, 图标, 预估耗时秒) ; 未知返回 (首字母大写名, 占位图标, None)."""
     key = name.lower().replace("_disabled", "").strip()
     if key in _STARTUP_KNOWN:
-        return _STARTUP_KNOWN[key][0]
-    # 取最后一段或键名本身
-    return key.replace("_", " ").title()
+        return _STARTUP_KNOWN[key]
+    return (key.replace("_", " ").title(), "🔲", None)
 
 
-def _startup_icon(name):
-    key = name.lower().replace("_disabled", "").strip()
-    return _STARTUP_KNOWN.get(key, ("", "🔲", 0))[1]
+def _impact_level(sec):
+    if sec is None:
+        return "中"
+    if sec >= 2.0:
+        return "高"
+    if sec >= 1.0:
+        return "中"
+    return "低"
 
 
-def _startup_impact(name):
-    """粗略估算启动耗时; 无信息返回 None."""
-    key = name.lower().replace("_disabled", "").strip()
-    if key in _STARTUP_KNOWN:
-        return _STARTUP_KNOWN[key][2]
-    return None
+def _resolve_impact(target_path, name):
+    """返回 (预估耗时秒, 影响等级). 已知应用用内置估值, 未知按目标 exe 体积估算."""
+    disp, icon, sec = _startup_meta(name)
+    if sec is not None:
+        return sec, _impact_level(sec)
+    if target_path:
+        try:
+            sz = os.path.getsize(target_path)
+        except OSError:
+            sz = 0
+        if sz >= 150 * 1024 * 1024:
+            return 3.0, "高"
+        if sz >= 50 * 1024 * 1024:
+            return 2.0, "中"
+        if sz >= 5 * 1024 * 1024:
+            return 1.0, "中"
+        return 0.3, "低"
+    return 1.0, "中"
+
+
+def _lnk_target(path):
+    """读取 .lnk 目标路径; 非 lnk 或失败直接返回原路径."""
+    if not path or not path.lower().endswith(".lnk"):
+        return path
+    ps = (
+        "try { "
+        "$ws = New-Object -ComObject WScript.Shell; "
+        "$s = $ws.CreateShortcut('" + path.replace("'", "''") + "'); "
+        "Write-Output $s.TargetPath "
+        "} catch { Write-Output '' }"
+    )
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        t = (r.stdout or "").strip()
+        return t if t and os.path.exists(t) else path
+    except Exception:
+        return path
+
+
+def _startup_folders():
+    folders = []
+    au = os.environ.get("APPDATA")
+    if au:
+        folders.append((os.path.join(au, "Microsoft", "Windows", "Start Menu", "Programs", "Startup"), "用户"))
+    pd = os.environ.get("ProgramData")
+    if pd:
+        folders.append((os.path.join(pd, "Microsoft", "Windows", "Start Menu", "Programs", "Startup"), "所有用户"))
+    return folders
+
+
+def _reg_exe(value):
+    """从注册表命令行提取可执行路径."""
+    val = (value or "").strip()
+    if not val:
+        return ""
+    if val.startswith('"'):
+        return val.split('"')[1] if '"' in val[1:] else ""
+    return val.split()[0] if val.split() else ""
 
 
 def list_startup_items():
-    """读取注册表 Run 键作为开机启动项; 禁用通过重命名键名实现."""
+    """聚合三类真实开机启动源: 注册表 Run 键、开始菜单启动文件夹、任务计划程序(登录触发)."""
     items = []
     seen = set()
+
+    # 1) 注册表 Run 键
     for hkey, path in _STARTUP_KEYS:
         try:
             with winreg.OpenKey(hkey, path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
@@ -1052,33 +1121,202 @@ def list_startup_items():
                     try:
                         name, value, _ = winreg.EnumValue(key, i)
                         i += 1
-                        origin = "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU"
-                        is_64 = "x64" if "WOW6432Node" not in path else "x86"
-                        enabled = not name.endswith("_disabled")
-                        key_id = f"{origin}_{is_64}_{name}"
-                        if key_id in seen:
-                            continue
-                        seen.add(key_id)
-                        raw_name = name.replace("_disabled", "")
-                        impact = _startup_impact(raw_name)
-                        items.append({
-                            "id": key_id,
-                            "name": raw_name,
-                            "display_name": _startup_display_name(raw_name),
-                            "icon": _startup_icon(raw_name),
-                            "impact": impact,
-                            "command": str(value),
-                            "location": f"{origin} ({is_64})",
-                            "enabled": enabled,
-                            "hkey": "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU",
-                            "path": path,
-                            "value_name": name,
-                        })
                     except OSError:
                         break
+                    origin = "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU"
+                    is_64 = "x64" if "WOW6432Node" not in path else "x86"
+                    enabled = not name.endswith("_disabled")
+                    raw = name.replace("_disabled", "")
+                    key_id = f"reg_{origin}_{is_64}_{raw}"
+                    if key_id in seen:
+                        continue
+                    seen.add(key_id)
+                    disp, icon, _ = _startup_meta(raw)
+                    target = _reg_exe(str(value))
+                    sec, lvl = _resolve_impact(target, raw)
+                    items.append({
+                        "id": key_id,
+                        "type": "registry",
+                        "name": raw,
+                        "display_name": disp,
+                        "icon": icon,
+                        "enabled": enabled,
+                        "impact": sec,
+                        "impact_level": lvl,
+                        "command": str(value),
+                        "location": f"注册表 {origin} ({is_64})",
+                        "hkey": origin,
+                        "path": path,
+                        "value_name": name,
+                        "needs_admin": hkey == winreg.HKEY_LOCAL_MACHINE,
+                    })
         except OSError:
             continue
+
+    # 2) 开始菜单启动文件夹 (含 Disabled 子文件夹中的已禁用项)
+    for folder, scope in _startup_folders():
+        if not os.path.isdir(folder):
+            continue
+        for fn in os.listdir(folder):
+            fp = os.path.join(folder, fn)
+            if not os.path.isfile(fp):
+                continue
+            if not (fn.lower().endswith((".lnk", ".exe", ".url"))):
+                continue
+            key_id = f"folder_{scope}_{fn}"
+            if key_id in seen:
+                continue
+            seen.add(key_id)
+            disp = os.path.splitext(fn)[0]
+            target = _lnk_target(fp)
+            sec, lvl = _resolve_impact(target, disp)
+            items.append({
+                "id": key_id,
+                "type": "folder",
+                "name": fn,
+                "display_name": disp,
+                "icon": "📁",
+                "enabled": True,
+                "impact": sec,
+                "impact_level": lvl,
+                "command": target,
+                "location": f"启动文件夹 ({scope})",
+                "file_path": fp,
+                "folder": folder,
+                "needs_admin": scope == "所有用户",
+            })
+        # 已禁用的 (在 Disabled 子文件夹)
+        disabled_dir = os.path.join(folder, "Disabled")
+        if os.path.isdir(disabled_dir):
+            for fn in os.listdir(disabled_dir):
+                fp = os.path.join(disabled_dir, fn)
+                if not os.path.isfile(fp):
+                    continue
+                if not fn.lower().endswith((".lnk", ".exe", ".url")):
+                    continue
+                key_id = f"folder_{scope}_{fn}"
+                if key_id in seen:
+                    continue
+                seen.add(key_id)
+                disp = os.path.splitext(fn)[0]
+                target = _lnk_target(fp)
+                sec, lvl = _resolve_impact(target, disp)
+                items.append({
+                    "id": key_id,
+                    "type": "folder",
+                    "name": fn,
+                    "display_name": disp,
+                    "icon": "📁",
+                    "enabled": False,
+                    "impact": sec,
+                    "impact_level": lvl,
+                    "command": target,
+                    "location": f"启动文件夹 ({scope}) · 已禁用",
+                    "file_path": fp,
+                    "folder": folder,
+                    "needs_admin": scope == "所有用户",
+                })
+
+    # 3) 任务计划程序 (登录触发的任务)
+    try:
+        ps = (
+            "Get-ScheduledTask | Where-Object { "
+            "($_.Triggers | ForEach-Object { $_.CimClass.CimClassName }) -contains 'LogonTrigger' "
+            "} | ForEach-Object { "
+            "[PSCustomObject]@{Name=$_.TaskName; State=$_.State.ToString(); "
+            "Exe=(($_.Actions | Select-Object -First 1).Execute)} "
+            "} | ConvertTo-Json -Compress"
+        )
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=40,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        txt = (r.stdout or "").strip()
+        if txt:
+            import json
+            data = json.loads(txt) if txt.startswith("[") else [json.loads(txt)]
+            for t in data:
+                tn = (t.get("Name") or "").strip()
+                if not tn:
+                    continue
+                key_id = f"task_{tn}"
+                if key_id in seen:
+                    continue
+                seen.add(key_id)
+                enabled = (t.get("State") != "Disabled")
+                exe = (t.get("Exe") or "").strip().strip('"')
+                disp = tn.split("\\")[-1]
+                sec, lvl = _resolve_impact(exe, disp)
+                items.append({
+                    "id": key_id,
+                    "type": "task",
+                    "name": tn,
+                    "display_name": disp,
+                    "icon": "⏰",
+                    "enabled": enabled,
+                    "impact": sec,
+                    "impact_level": lvl,
+                    "command": exe,
+                    "location": "任务计划程序 (登录)",
+                    "task_name": tn,
+                    "needs_admin": tn.lower().startswith("microsoft\\windows\\"),
+                })
+    except Exception:
+        pass
+
+    items.sort(key=lambda x: (not x["enabled"], x["display_name"].lower()))
     return {"ok": True, "items": items, "count": len(items)}
+
+
+def set_startup_state(item, enabled):
+    """按类型启用/禁用启动项. item 为 list_startup_items 返回的字典."""
+    typ = item.get("type")
+    if typ == "registry":
+        return set_startup_enabled(item["hkey"], item["path"], item["value_name"], enabled)
+    if typ == "folder":
+        return _set_folder_startup(item, enabled)
+    if typ == "task":
+        return _set_task_startup(item["task_name"], enabled)
+    return {"ok": False, "error": "unknown type"}
+
+
+def _set_folder_startup(item, enabled):
+    fp = item["file_path"]
+    folder = item["folder"]
+    disabled_dir = os.path.join(folder, "Disabled")
+    try:
+        if enabled:
+            src = os.path.join(disabled_dir, os.path.basename(fp))
+            if not os.path.exists(src):
+                return {"ok": False, "error": "未找到已禁用的快捷方式 / disabled shortcut missing"}
+            os.makedirs(folder, exist_ok=True)
+            os.rename(src, fp)
+            return {"ok": True, "enabled": True}
+        os.makedirs(disabled_dir, exist_ok=True)
+        dst = os.path.join(disabled_dir, os.path.basename(fp))
+        os.rename(fp, dst)
+        return {"ok": True, "enabled": False}
+    except PermissionError:
+        return {"ok": False, "error": "权限不足，需要管理员运行 / need admin"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _set_task_startup(task_name, enabled):
+    verb = "Enable-ScheduledTask" if enabled else "Disable-ScheduledTask"
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             f"{verb} -TaskName '{task_name.replace(chr(39), chr(39) * 2)}'"],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        if r.returncode == 0:
+            return {"ok": True, "enabled": enabled}
+        return {"ok": False, "error": (r.stderr or r.stdout or "failed").strip()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def set_startup_enabled(hkey_str, path, value_name, enabled):
@@ -1160,7 +1398,7 @@ def system_check():
         add(
             "开机启动项", "Startup items",
             10,
-            boot_count > 12,
+            boot_count > 20,
             f"有 {boot_count} 个开机启动项" if boot_count else "无启动项",
             f"{boot_count} startup items" if boot_count else "No startup items",
         )
@@ -1173,7 +1411,7 @@ def system_check():
         add(
             "运行进程", "Running processes",
             10,
-            proc_count > 150,
+            proc_count > 400,
             f"有 {proc_count} 个进程运行中" if proc_count else "无进程信息",
             f"{proc_count} processes running" if proc_count else "No process info",
         )

@@ -11,7 +11,7 @@ from cleaner import (
     get_drives, get_disk_info,
     scan_duplicate_files, delete_duplicate_files,
     list_processes, kill_process,
-    list_startup_items, set_startup_enabled,
+    list_startup_items, set_startup_enabled, set_startup_state,
     system_check,
     list_installed_apps, uninstall_app,
 )
@@ -118,6 +118,12 @@ class Api:
     def set_startup_enabled(self, hkey, path, value_name, enabled):
         try:
             return set_startup_enabled(hkey, path, value_name, enabled)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)}
+
+    def set_startup_state(self, item, enabled):
+        try:
+            return set_startup_state(item, enabled)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": str(e)}
 
