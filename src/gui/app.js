@@ -25,6 +25,7 @@ function showView(name) {
   document.querySelectorAll(".view").forEach((el) => el.classList.add("hidden"));
   if (name === "dashboard") $("dashboard").classList.remove("hidden");
   if (name === "storage") $("storageView").classList.remove("hidden");
+  if (name === "apps") $("appsView").classList.remove("hidden");
   if (name === "detail") $("detailView").classList.remove("hidden");
   if (name === "settings") $("settingsView").classList.remove("hidden");
   if (name === "placeholder") $("placeholderView").classList.remove("hidden");
@@ -124,6 +125,9 @@ function initNav() {
       } else if (view === "storage") {
         showView("storage");
         loadStoragePreviews();
+      } else if (view === "apps") {
+        showView("apps");
+        loadAppsHomePreviews();
       } else if (view === "settings") {
         showView("settings");
       } else {
@@ -141,6 +145,8 @@ function initNav() {
     const navView = activeNav ? activeNav.dataset.view : "home";
     if (navView === "storage") {
       showView("storage");
+    } else if (navView === "apps") {
+      showView("apps");
     } else {
       showView("dashboard");
     }
@@ -186,6 +192,7 @@ function openDetail(mode) {
   else if (mode === "checkup") renderCheckup(content);
   else if (mode === "processes") renderProcesses(content);
   else if (mode === "startup") renderStartup(content);
+  else if (mode === "uninstall") renderUninstall(content);
 }
 
 // ---------------- 深度清理 / Deep clean ----------------
@@ -850,13 +857,22 @@ async function doCheckup() {
 // ---------------- 进程管理 / Process manager ----------------
 function renderProcesses(container) {
   container.innerHTML = `
-    <div class="toolbar">
-      <span class="total" id="procTotal">进程数 / Processes: —</span>
-      <button id="procRefreshBtn" class="btn primary">刷新 / Refresh</button>
+    <p class="section-desc">关闭不用的应用进程，提升设备速度</p>
+    <div class="collapsible open" id="procCollapse">
+      <div class="collapsible-header" id="procCollapseHead">
+        <span>如需要可关闭以下应用</span>
+        <span class="arrow">▾</span>
+      </div>
+      <div class="collapsible-body">
+        <div id="procList" class="process-table"><div class="empty">点击刷新获取进程列表。<br><span class="en">Click refresh to load processes.</span></div></div>
+      </div>
     </div>
-    <div id="procList" class="file-table"><div class="empty">点击刷新获取进程列表。<br><span class="en">Click refresh to load processes.</span></div></div>
   `;
-  $("procRefreshBtn").addEventListener("click", loadProcesses);
+  $("procCollapseHead").addEventListener("click", () => {
+    $("procCollapse").classList.toggle("open");
+    $("procCollapseHead").querySelector(".arrow").textContent =
+      $("procCollapse").classList.contains("open") ? "▾" : "▸";
+  });
   loadProcesses();
 }
 
@@ -866,19 +882,22 @@ async function loadProcesses() {
   try {
     const r = await api().list_processes();
     if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
-    $("procTotal").textContent = `进程数 / Processes: ${r.count}`;
     if (!r.processes.length) {
       list.innerHTML = '<div class="empty">未找到非系统进程。<br><span class="en">No non-system processes found.</span></div>';
       return;
     }
     list.innerHTML = "";
     r.processes.forEach((p) => {
+      const icon = procIcon(p.name);
       const row = document.createElement("div");
-      row.className = "file-row";
+      row.className = "process-row";
       row.innerHTML = `
-        <div class="file-info"><div class="file-name">${p.name}</div><div class="file-path">PID ${p.pid}</div></div>
-        <div class="file-size">${fmt(p.memory)}</div>
-        <button class="btn danger" data-pid="${p.pid}">结束 / End</button>
+        <div class="process-icon">${icon}</div>
+        <div class="process-info">
+          <div class="process-name">${p.name}</div>
+          <div class="process-mem">内存占用: ${fmt(p.memory)}</div>
+        </div>
+        <button class="btn ghost end-proc-btn" data-pid="${p.pid}">结束进程</button>
       `;
       row.querySelector("button").addEventListener("click", (e) => {
         e.stopPropagation();
@@ -891,12 +910,32 @@ async function loadProcesses() {
   }
 }
 
+function procIcon(name) {
+  const n = name.toLowerCase();
+  const map = {
+    "workbuddy": "🤖", "douyin": "🎵", "weixin": "💬", "wechat": "💬",
+    "wxwork": "💼", "qq": "🐧", "tim": "🐧", "steam": "🎮", "epicgameslauncher": "🎮",
+    "riot": "🎮", "league": "🎮", "chrome": "🌐", "msedge": "🌐", "firefox": "🦊",
+    "code": "📝", "cursor": "📝", "sublime_text": "📝", "snippingtool": "✂️",
+    "explorer": "📁", "notepad": "📝", "amd": "🔴", "nvidia": "🟢", "intel": "🔵",
+    "spotify": "🎵", "netease": "🎵", "music": "🎵",
+    "discord": "💬", "telegram": "💬", "slack": "💬",
+    "docker": "🐳", "python": "🐍", "node": "🟩", "java": "☕",
+    "microsoft cross device service": "📱",
+  };
+  for (const [k, v] of Object.entries(map)) {
+    if (n.includes(k)) return v;
+  }
+  return "🪟";
+}
+
 async function killProc(pid, name) {
   if (!confirm(`确认结束进程 "${name}" (PID ${pid})？\nEnd process "${name}" (PID ${pid})?`)) return;
   try {
     const r = await api().kill_process(pid);
     if (!r.ok) { alert("结束进程失败 / Failed: " + (r.error || "unknown")); }
     loadProcesses();
+    loadAppsHomePreviews();
   } catch (e) {
     alert("错误 / Error: " + e);
   }
@@ -905,13 +944,11 @@ async function killProc(pid, name) {
 // ---------------- 开机管理 / Startup manager ----------------
 function renderStartup(container) {
   container.innerHTML = `
-    <div class="toolbar">
-      <span class="total" id="startupTotal">启动项 / Startup items: —</span>
-      <button id="startupRefreshBtn" class="btn primary">刷新 / Refresh</button>
+    <div class="startup-header">
+      <div class="startup-title">本次开机耗时<strong id="bootTime">—</strong>秒</div>
     </div>
-    <div id="startupList" class="file-table"><div class="empty">点击刷新获取开机启动项。<br><span class="en">Click refresh to load startup items.</span></div></div>
+    <div id="startupList" class="startup-list"><div class="empty">正在获取开机启动项…<br><span class="en">Loading startup items…</span></div></div>
   `;
-  $("startupRefreshBtn").addEventListener("click", loadStartupItems);
   loadStartupItems();
 }
 
@@ -921,7 +958,12 @@ async function loadStartupItems() {
   try {
     const r = await api().list_startup_items();
     if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
-    $("startupTotal").textContent = `启动项 / Startup items: ${r.count}`;
+    const bootTimeEl = $("bootTime");
+    if (bootTimeEl) {
+      // 估算总启动耗时：所有已知项的 impact 之和
+      const totalImpact = r.items.reduce((a, it) => a + (it.impact || 0), 0);
+      bootTimeEl.textContent = totalImpact > 0 ? totalImpact.toFixed(1) : "—";
+    }
     if (!r.items.length) {
       list.innerHTML = '<div class="empty">未发现注册表启动项。<br><span class="en">No registry startup items found.</span></div>';
       return;
@@ -929,19 +971,25 @@ async function loadStartupItems() {
     list.innerHTML = "";
     r.items.forEach((it) => {
       const row = document.createElement("div");
-      row.className = "file-row";
+      row.className = "startup-row";
+      const impactText = it.impact ? `启动耗时：${it.impact}秒` : "启动耗时未知";
+      const subText = it.enabled ? `${impactText}<br>可以选择关闭` : "已禁用";
       row.innerHTML = `
-        <div class="file-info" style="flex:1.2">
-          <div class="file-name">${it.name}</div>
-          <div class="file-path">${it.command}</div>
+        <div class="startup-icon">${it.icon || "🔲"}</div>
+        <div class="startup-info">
+          <div class="startup-name">${it.display_name || it.name}</div>
+          <div class="startup-desc">${subText}</div>
         </div>
-        <div class="file-size" style="font-size:12px;color:var(--muted)">${it.location}</div>
-        <div class="file-size" style="color:${it.enabled ? 'var(--ok)' : 'var(--muted)'}">${it.enabled ? "已启用" : "已禁用"}</div>
-        <button class="btn ${it.enabled ? 'ghost' : 'primary'}" data-id="${it.id}">${it.enabled ? "禁用 / Disable" : "启用 / Enable"}</button>
+        <label class="toggle-switch">
+          <input type="checkbox" data-id="${it.id}" ${it.enabled ? "checked" : ""}>
+          <span class="toggle-slider"></span>
+          <span class="toggle-label">${it.enabled ? "开" : "关"}</span>
+        </label>
       `;
-      row.querySelector("button").addEventListener("click", (e) => {
+      const cb = row.querySelector("input[type='checkbox']");
+      cb.addEventListener("change", (e) => {
         e.stopPropagation();
-        toggleStartup(it, !it.enabled);
+        toggleStartup(it, cb.checked);
       });
       list.appendChild(row);
     });
@@ -955,12 +1003,129 @@ async function toggleStartup(it, enabled) {
     const r = await api().set_startup_enabled(it.hkey, it.path, it.value_name, enabled);
     if (!r.ok) { alert("操作失败 / Failed: " + (r.error || "unknown")); }
     loadStartupItems();
-    // 刷新首页计数
-    const rr = await api().list_startup_items();
-    if (rr.ok) $("startupCount").textContent = rr.count;
+    loadAppsHomePreviews();
   } catch (e) {
     alert("错误 / Error: " + e);
   }
+}
+
+// ---------------- 深度卸载 / Deep uninstall ----------------
+let installedApps = [];
+
+function renderUninstall(container) {
+  container.innerHTML = `
+    <div class="toolbar">
+      <span class="total" id="appTotal">已安装应用 / Installed apps: —</span>
+      <input type="text" id="appSearch" placeholder="搜索应用 / Search apps" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;min-width:220px;font-size:13px;" />
+      <button id="appRefreshBtn" class="btn primary">刷新 / Refresh</button>
+    </div>
+    <div id="appList" class="app-table"><div class="empty">正在加载已安装应用…<br><span class="en">Loading installed apps…</span></div></div>
+  `;
+  $("appRefreshBtn").addEventListener("click", loadInstalledApps);
+  $("appSearch").addEventListener("input", filterInstalledApps);
+  loadInstalledApps();
+}
+
+async function loadInstalledApps() {
+  const list = $("appList");
+  list.innerHTML = '<div class="empty">正在加载已安装应用…<br><span class="en">Loading installed apps…</span></div>';
+  try {
+    const r = await api().list_installed_apps();
+    if (!r.ok) { list.innerHTML = '<div class="empty err">获取失败 / Failed: ' + r.error + "</div>"; return; }
+    installedApps = r.apps || [];
+    $("appTotal").textContent = `已安装应用 / Installed apps: ${installedApps.length}`;
+    renderAppList(installedApps);
+  } catch (e) {
+    list.innerHTML = '<div class="empty err">错误 / Error: ' + e + "</div>";
+  }
+}
+
+function filterInstalledApps(e) {
+  const q = e.target.value.trim().toLowerCase();
+  const filtered = installedApps.filter((a) =>
+    a.name.toLowerCase().includes(q) ||
+    (a.publisher && a.publisher.toLowerCase().includes(q))
+  );
+  renderAppList(filtered);
+}
+
+function appIcon(name, iconPath) {
+  if (iconPath && iconPath.toLowerCase().endsWith(".ico")) return "🪟";
+  const n = (name || "").toLowerCase();
+  const map = {
+    "microsoft": "🪟", "edge": "🌐", "chrome": "🌐", "firefox": "🦊",
+    "qq": "🐧", "wechat": "💬", "weixin": "💬", "steam": "🎮",
+    "epic": "🎮", "riot": "🎮", "java": "☕", "python": "🐍",
+    "adobe": "🎨", "office": "📄", "visual studio": "📝", "code": "📝",
+    "docker": "🐳", "node": "🟩", "npm": "🟩", "git": "🌿",
+    "spotify": "🎵", "netease": "🎵",
+  };
+  for (const [k, v] of Object.entries(map)) {
+    if (n.includes(k)) return v;
+  }
+  return "📦";
+}
+
+function renderAppList(apps) {
+  const list = $("appList");
+  if (!apps.length) {
+    list.innerHTML = '<div class="empty">未找到匹配应用。<br><span class="en">No matching apps.</span></div>';
+    return;
+  }
+  list.innerHTML = "";
+  apps.forEach((a) => {
+    const row = document.createElement("div");
+    row.className = "app-row";
+    const meta = [a.publisher, a.version, a.install_date].filter(Boolean).join(" · ");
+    row.innerHTML = `
+      <div class="app-icon uninstall">${appIcon(a.name, a.icon)}</div>
+      <div class="app-info">
+        <div class="app-name">${a.name}</div>
+        <div class="app-meta">${meta || "未知发布者"}</div>
+      </div>
+      <div class="app-size">${a.size ? fmt(a.size) : ""}</div>
+      <button class="btn danger uninstall-btn" data-id="${a.id}">卸载</button>
+    `;
+    row.querySelector("button").addEventListener("click", (e) => {
+      e.stopPropagation();
+      doUninstall(a);
+    });
+    list.appendChild(row);
+  });
+}
+
+async function doUninstall(a) {
+  if (!confirm(`确认卸载 "${a.name}"？\nConfirm uninstall "${a.name}"?`)) return;
+  const btn = document.querySelector(`.uninstall-btn[data-id="${a.id}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = "卸载中…"; }
+  try {
+    const r = await api().uninstall_app(a.id);
+    if (btn) { btn.disabled = false; btn.textContent = "卸载"; }
+    if (!r.ok) { alert("卸载失败 / Uninstall failed: " + (r.error || r.stderr || "unknown")); }
+    else { alert(`"${a.name}" 卸载程序已启动。\nUninstall started for "${a.name}".`); }
+    loadInstalledApps();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "卸载"; }
+    alert("错误 / Error: " + e);
+  }
+}
+
+async function loadAppsHomePreviews() {
+  try {
+    const r = await api().list_processes();
+    if (r.ok) {
+      $("appsProcessSub").innerHTML = `当前有 <strong>${r.count}</strong> 个应用进行中`;
+    }
+  } catch (e) { console.error(e); }
+
+  try {
+    const r = await api().list_startup_items();
+    if (r.ok) {
+      const totalImpact = r.items.reduce((a, it) => a + (it.impact || 0), 0);
+      $("appsStartupSub").innerHTML =
+        `本次启动花费 <strong>${totalImpact > 0 ? totalImpact.toFixed(1) : "—"}</strong> 秒 · 有 <strong id="appsStartupCount">${r.count}</strong> 项可优化`;
+    }
+  } catch (e) { console.error(e); }
 }
 
 // ---------------- 弹窗 / Modal ----------------

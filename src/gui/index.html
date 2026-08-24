@@ -187,6 +187,39 @@
         </div>
       </section>
 
+      <!-- 应用管理 / Apps -->
+      <section id="appsView" class="view hidden">
+        <h2 class="page-title">应用管理 / App Management</h2>
+        <div class="cards-grid app-manage-grid">
+          <div class="action-card" data-detail="processes">
+            <div class="action-icon processes">🧮</div>
+            <div class="action-body">
+              <div class="action-title">应用进程管理 <span class="en">Process Manager</span></div>
+              <div class="action-sub" id="appsProcessSub">当前有 <strong>—</strong> 个应用进行中</div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="action-card" data-detail="startup">
+            <div class="action-icon startup">⏻</div>
+            <div class="action-body">
+              <div class="action-title">开机启动项管理 <span class="en">Startup Manager</span></div>
+              <div class="action-sub" id="appsStartupSub">本次启动花费 <strong>—</strong> 秒 · 有 <strong id="appsStartupCount">—</strong> 项可优化</div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="action-card" data-detail="uninstall">
+            <div class="action-icon uninstall">🗑️</div>
+            <div class="action-body">
+              <div class="action-title">深度卸载 <span class="en">Deep Uninstall</span></div>
+              <div class="action-sub" id="appsUninstallSub">卸载应用，删除残留文件和注册表项</div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+        </div>
+      </section>
+
       <!-- 通用详情页 / Detail view -->
       <section id="detailView" class="view hidden">
         <div class="detail-header">

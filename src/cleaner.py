@@ -698,6 +698,7 @@ def quick_boost():
             ["ipconfig", "/flushdns"],
             capture_output=True, text=True, encoding="utf-8", errors="ignore",
             timeout=30, shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         details.append("DNS flushed" if r.returncode == 0 else f"DNS flush rc={r.returncode}")
     except Exception as e:
@@ -707,6 +708,7 @@ def quick_boost():
         subprocess.Popen(
             "rundll32.exe advapi32.dll,ProcessIdleTasks",
             shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         details.append("idle tasks scheduled")
     except Exception as e:
@@ -761,6 +763,7 @@ def winsxs_cleanable_bytes():
         out = subprocess.run(
             ["dism.exe", "/Online", "/Cleanup-Image", "/AnalyzeComponentStore"],
             capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=150,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         txt = out.stdout + "\n" + out.stderr
     except Exception:
@@ -900,6 +903,7 @@ def clean_items(ids):
                     r = subprocess.run(
                         ["dism.exe", "/Online", "/Cleanup-Image", "/StartComponentCleanup"],
                         capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=300,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
                     )
                     if r.returncode != 0:
                         errs.append("DISM WinSxS 清理返回 " + str(r.returncode))
@@ -927,6 +931,7 @@ def list_processes():
         out = subprocess.run(
             ["tasklist", "/FO", "CSV", "/NH"],
             capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
         for line in lines:
@@ -971,6 +976,7 @@ def kill_process(pid):
         r = subprocess.run(
             ["taskkill", "/PID", str(pid), "/F"],
             capture_output=True, text=True, encoding="utf-8", errors="ignore", timeout=20,
+            creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if r.returncode == 0:
             return {"ok": True, "pid": pid}
@@ -987,6 +993,52 @@ _STARTUP_KEYS = [
     (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run"),
     (winreg.HKEY_LOCAL_MACHINE, r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run"),
 ]
+
+# 常见启动项名称 -> (显示名, 图标 emoji, 预估启动耗时秒数)
+_STARTUP_KNOWN = {
+    "boot camp manager": ("Boot Camp Manager", "💻", 1.0),
+    "ollama app": ("Ollama", "🦙", 0.6),
+    "ace client tray": ("ACE Client Tray", "🛡️", 0.5),
+    "doubao launcher": ("豆包", "🤖", 0.8),
+    "doubao": ("豆包", "🤖", 0.8),
+    "douyin": ("抖音", "🎵", 1.0),
+    "weixin": ("微信", "💬", 1.2),
+    "qq": ("QQ", "🐧", 2.5),
+    "qqpctray": ("QQ 电脑管家", "🛡️", 1.5),
+    "java update scheduler": ("Java Update Scheduler", "☕", 0.8),
+    "gaijin.net updater": ("Gaijin Updater", "🎮", 1.0),
+    "steam": ("Steam", "🎮", 2.0),
+    "epicgameslauncher": ("Epic Games", "🎮", 2.0),
+    "onedrive": ("OneDrive", "☁️", 1.0),
+    "dropbox": ("Dropbox", "📦", 1.0),
+    "everything": ("Everything", "🔍", 0.3),
+    "powertoys": ("PowerToys", "⚡", 1.0),
+    "clash": ("Clash", "🌐", 0.5),
+    "v2rayn": ("v2rayN", "🌐", 0.5),
+    "watt": ("Watt Toolkit", "🔧", 0.8),
+}
+
+def _startup_display_name(name):
+    """把注册表键名映射为可读显示名; 未知则返回键名首字母大写."""
+    key = name.lower().replace("_disabled", "").strip()
+    if key in _STARTUP_KNOWN:
+        return _STARTUP_KNOWN[key][0]
+    # 取最后一段或键名本身
+    return key.replace("_", " ").title()
+
+
+def _startup_icon(name):
+    key = name.lower().replace("_disabled", "").strip()
+    return _STARTUP_KNOWN.get(key, ("", "🔲", 0))[1]
+
+
+def _startup_impact(name):
+    """粗略估算启动耗时; 无信息返回 None."""
+    key = name.lower().replace("_disabled", "").strip()
+    if key in _STARTUP_KNOWN:
+        return _STARTUP_KNOWN[key][2]
+    return None
+
 
 def list_startup_items():
     """读取注册表 Run 键作为开机启动项; 禁用通过重命名键名实现."""
@@ -1007,9 +1059,14 @@ def list_startup_items():
                         if key_id in seen:
                             continue
                         seen.add(key_id)
+                        raw_name = name.replace("_disabled", "")
+                        impact = _startup_impact(raw_name)
                         items.append({
                             "id": key_id,
-                            "name": name.replace("_disabled", ""),
+                            "name": raw_name,
+                            "display_name": _startup_display_name(raw_name),
+                            "icon": _startup_icon(raw_name),
+                            "impact": impact,
                             "command": str(value),
                             "location": f"{origin} ({is_64})",
                             "enabled": enabled,
@@ -1147,3 +1204,145 @@ def _flatten_items(items):
         out.append(it)
         out.extend(it.get("children", []))
     return out
+
+
+# ---------------- 应用管理 / Installed apps & uninstall ----------------
+_UNINSTALL_KEYS = [
+    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+    (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+    (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+]
+
+
+def _parse_uninstall_command(cmd):
+    """拆分卸载命令为可安全传给 subprocess 的列表; 对 MsiExec 自动加 /qn."""
+    if not cmd:
+        return None
+    cmd = cmd.strip()
+    if not cmd:
+        return None
+    lower = cmd.lower()
+    if lower.startswith("msiexec"):
+        # msiexec /I{GUID} 或 /X{GUID}
+        parts = cmd.replace("/i", "/X").split()
+        parts = [p for p in parts if p.lower() not in ("/i", "/x", "/uninstall")]
+        return ["msiexec.exe", "/X", parts[0] if parts else cmd, "/qn", "/norestart"]
+    # 普通 exe 路径，带空格需加引号；这里简单按第一个引号块拆分
+    if cmd.startswith('"'):
+        end = cmd.find('"', 1)
+        if end > 0:
+            exe = cmd[1:end]
+            rest = cmd[end + 1:].strip()
+            out = [exe]
+            if rest:
+                out.extend(rest.split())
+            return out
+    parts = cmd.split()
+    return parts if parts else None
+
+
+def list_installed_apps():
+    """读取注册表 Uninstall 项，返回已安装应用列表."""
+    apps = []
+    seen = set()
+    for hkey, path in _UNINSTALL_KEYS:
+        try:
+            with winreg.OpenKey(hkey, path, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                i = 0
+                while True:
+                    try:
+                        sub_name = winreg.EnumKey(key, i)
+                        i += 1
+                        with winreg.OpenKey(key, sub_name, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as sub:
+                            try:
+                                display_name, _ = winreg.QueryValueEx(sub, "DisplayName")
+                            except OSError:
+                                continue
+                            try:
+                                publisher, _ = winreg.QueryValueEx(sub, "Publisher")
+                            except OSError:
+                                publisher = ""
+                            try:
+                                install_date, _ = winreg.QueryValueEx(sub, "InstallDate")
+                            except OSError:
+                                install_date = ""
+                            try:
+                                version, _ = winreg.QueryValueEx(sub, "DisplayVersion")
+                            except OSError:
+                                version = ""
+                            try:
+                                uninstall_cmd, _ = winreg.QueryValueEx(sub, "UninstallString")
+                            except OSError:
+                                uninstall_cmd = ""
+                            try:
+                                quiet_cmd, _ = winreg.QueryValueEx(sub, "QuietUninstallString")
+                            except OSError:
+                                quiet_cmd = ""
+                            try:
+                                icon_path, _ = winreg.QueryValueEx(sub, "DisplayIcon")
+                            except OSError:
+                                icon_path = ""
+                            try:
+                                estimate_size, _ = winreg.QueryValueEx(sub, "EstimatedSize")
+                                size = int(estimate_size) * 1024
+                            except (OSError, ValueError):
+                                size = 0
+
+                        app_id = f"{hkey}_{path}_{sub_name}"
+                        if app_id in seen:
+                            continue
+                        seen.add(app_id)
+
+                        cmd = quiet_cmd or uninstall_cmd
+                        parsed = _parse_uninstall_command(cmd)
+                        apps.append({
+                            "id": app_id,
+                            "key_name": sub_name,
+                            "name": str(display_name).strip(),
+                            "publisher": str(publisher).strip(),
+                            "install_date": str(install_date).strip(),
+                            "version": str(version).strip(),
+                            "size": size,
+                            "uninstall_string": str(uninstall_cmd).strip(),
+                            "quiet_string": str(quiet_cmd).strip(),
+                            "icon": str(icon_path).strip(),
+                            "command": parsed,
+                            "hkey": "HKLM" if hkey == winreg.HKEY_LOCAL_MACHINE else "HKCU",
+                            "path": path,
+                        })
+                    except OSError:
+                        break
+        except OSError:
+            continue
+    apps.sort(key=lambda a: a["name"].lower())
+    return {"ok": True, "apps": apps, "count": len(apps)}
+
+
+def uninstall_app(app_id):
+    """调用应用卸载命令; 成功后（或命令已提交）返回结果."""
+    r = list_installed_apps()
+    if not r.get("ok"):
+        return r
+    app = next((a for a in r["apps"] if a["id"] == app_id), None)
+    if not app:
+        return {"ok": False, "error": "应用未找到 / App not found"}
+    cmd = app["command"]
+    if not cmd:
+        return {"ok": False, "error": "没有可用的卸载命令 / No uninstall command"}
+    try:
+        cp = subprocess.run(
+            cmd,
+            capture_output=True, text=True, encoding="utf-8", errors="ignore",
+            timeout=120, shell=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        # msiexec 返回 0 或 3010(需要重启) 都算成功
+        success = cp.returncode in (0, 3010)
+        return {
+            "ok": success,
+            "returncode": cp.returncode,
+            "stdout": cp.stdout[:500],
+            "stderr": cp.stderr[:500],
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
