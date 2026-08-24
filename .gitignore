@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual env
+venv/
+.venv/
+
+# Build artifacts
+build/CDiskCleaner/
+dist/CDiskCleaner/
+*.spec
+
+# Keep dist exe out of source control; use GitHub Releases instead
+# dist/
+
+# Old build artifacts left by sandbox rename workaround
+build_old_*/
+dist_old_*/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store

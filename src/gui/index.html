@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>系统存储空间管理 / System Storage Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 左侧导航 / Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🧹</div>
+        <div>
+          <div class="brand-title">存储管理</div>
+          <div class="brand-sub">Storage Manager</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item" data-view="home">
+          <span class="nav-icon">🏠</span>
+          <span>首页<br /><span class="nav-en">Home</span></span>
+        </a>
+        <a class="nav-item" data-view="protect">
+          <span class="nav-icon">🛡️</span>
+          <span>保护<br /><span class="nav-en">Protection</span></span>
+        </a>
+        <a class="nav-item active" data-view="storage">
+          <span class="nav-icon">💾</span>
+          <span>存储<br /><span class="nav-en">Storage</span></span>
+        </a>
+        <a class="nav-item" data-view="apps">
+          <span class="nav-icon">📦</span>
+          <span>应用<br /><span class="nav-en">Apps</span></span>
+        </a>
+        <a class="nav-item" data-view="ai">
+          <span class="nav-icon">✨</span>
+          <span>AI工具<br /><span class="nav-en">AI Tools</span></span>
+        </a>
+        <a class="nav-item" data-view="repair">
+          <span class="nav-icon">🔧</span>
+          <span>修复建议<br /><span class="nav-en">Repair</span></span>
+        </a>
+        <a class="nav-item" data-view="claw">
+          <span class="nav-icon">🐾</span>
+          <span>Claw看板<br /><span class="nav-en">Claw</span></span>
+        </a>
+        <div class="nav-divider"></div>
+        <a class="nav-item" data-view="settings">
+          <span class="nav-icon">⚙️</span>
+          <span>设置<br /><span class="nav-en">Settings</span></span>
+        </a>
+        <a class="nav-item" data-view="feedback">
+          <span class="nav-icon">💬</span>
+          <span>反馈<br /><span class="nav-en">Feedback</span></span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- 主内容 / Main -->
+    <main class="main">
+      <!-- 顶部栏 / Topbar -->
+      <header class="topbar">
+        <h1>系统存储空间管理 <span class="top-en">/ System Storage Space Management</span></h1>
+        <div class="admin-chip" id="adminChip">检查权限中…</div>
+      </header>
+
+      <!-- 仪表盘 / Dashboard -->
+      <section id="dashboard" class="view">
+        <!-- 磁盘容量卡 / Disk info -->
+        <div class="disk-card">
+          <div class="disk-header">
+            <div>
+              <div class="disk-title" id="diskTitle">BOOTCAMP (C:)</div>
+              <div class="disk-used" id="diskUsed">已用 — / —</div>
+            </div>
+            <button class="text-btn" id="analyzeBtn">磁盘分析 <span class="arrow-right">›</span></button>
+          </div>
+          <div class="disk-bar-wrap">
+            <div class="disk-bar" id="diskBar"></div>
+          </div>
+          <div class="disk-legend" id="diskLegend"></div>
+        </div>
+
+        <!-- 操作卡片 / Action cards -->
+        <div class="cards-grid">
+          <div class="action-card" data-detail="deep">
+            <div class="action-icon deep">🧹</div>
+            <div class="action-body">
+              <div class="action-title">深度清理</div>
+              <div class="action-sub" id="deepSub">清理系统无用文件等</div>
+            </div>
+            <button class="btn primary" id="deepScanBtn">扫描</button>
+          </div>
+
+          <div class="action-card" data-detail="downloads">
+            <div class="action-icon download">📥</div>
+            <div class="action-body">
+              <div class="action-title">下载文件</div>
+              <div class="action-sub">扫描电脑中的下载文件</div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+
+          <div class="action-card" data-detail="large">
+            <div class="action-icon large">📄</div>
+            <div class="action-body">
+              <div class="action-title">大文件</div>
+              <div class="action-sub" id="largeSub">超过 <strong>—</strong> 大文件可清理</div>
+            </div>
+            <div class="action-controls">
+              <select id="largeDriveSelect" class="drive-select"></select>
+              <span class="arrow-right muted">›</span>
+            </div>
+          </div>
+
+          <div class="action-card" data-detail="duplicate">
+            <div class="action-icon dup">📑</div>
+            <div class="action-body">
+              <div class="action-title">重复文件</div>
+              <div class="action-sub" id="dupSub">超过 <strong>—</strong> 重复文件可清理</div>
+            </div>
+            <div class="action-controls">
+              <select id="dupDriveSelect" class="drive-select"></select>
+              <span class="arrow-right muted">›</span>
+            </div>
+          </div>
+
+          <div class="action-card" data-detail="sense">
+            <div class="action-icon sense">🧠</div>
+            <div class="action-body">
+              <div class="action-title">存储感知</div>
+              <div class="action-sub">自动释放空间、删除临时文件</div>
+            </div>
+            <span class="arrow-right muted">›</span>
+          </div>
+        </div>
+
+        <!-- 快速加速 / Quick boost -->
+        <div class="boost-panel">
+          <div class="boost-left">
+            <div class="boost-label">快速加速 / Quick Boost</div>
+            <div class="boost-desc">清理临时文件、刷新 DNS、整理空闲任务</div>
+          </div>
+          <div class="boost-right">
+            <div class="boost-mem">
+              <div class="mem-label">内存占用 / Memory <span id="memText">—</span></div>
+              <div class="mem-bar"><div id="memBar"></div></div>
+            </div>
+            <button class="btn primary" id="boostBtn">立即加速</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 通用详情页 / Detail view -->
+      <section id="detailView" class="view hidden">
+        <div class="detail-header">
+          <button class="btn ghost" id="backBtn">‹ 返回 / Back</button>
+          <h2 id="detailTitle">详情</h2>
+        </div>
+        <div id="detailContent" class="detail-content"></div>
+      </section>
+
+      <!-- 设置页 / Settings -->
+      <section id="settingsView" class="view hidden">
+        <h2 class="page-title">设置 / Settings</h2>
+        <div class="settings-card">
+          <h3>关于 / About</h3>
+          <p>系统存储空间管理工具 — 仅清理安全目录，删除文件进入回收站可恢复。</p>
+          <p class="en">System Storage Manager — cleans only safe locations; deleted files go to Recycle Bin.</p>
+        </div>
+        <div class="settings-card">
+          <h3>赞赏与支持 / Donate</h3>
+          <p>如果觉得有用，欢迎赞赏支持后续更新免费 AI 工具实测库。</p>
+          <p class="en">If you find this helpful, donations are welcome to support more free AI tool reviews.</p>
+          <img src="assets/donate.png" alt="赞赏码 / Donate QR" class="donate-img" />
+        </div>
+      </section>
+
+      <!-- 占位页 / Placeholder -->
+      <section id="placeholderView" class="view hidden">
+        <div class="placeholder">
+          <div class="placeholder-icon">🚧</div>
+          <div class="placeholder-title">即将上线</div>
+          <div class="placeholder-sub">This feature is coming soon.</div>
+          <button class="btn ghost" id="placeholderBack">返回存储 / Back to Storage</button>
+        </div>
+      </section>
+
+      <!-- 底部 / Footer -->
+      <footer class="footer">
+        文件删除统一进入回收站（可恢复）；WinSxS 由系统 DISM 维护（需管理员，不可恢复）。大文件与重复文件删除前请逐条确认。
+        <span class="en">Files go to Recycle Bin (recoverable); WinSxS uses system DISM (admin, not recoverable). Review large & duplicate files before deleting.</span>
+      </footer>
+    </main>
+  </div>
+
+  <!-- 二次确认弹窗 / Confirm modal -->
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-box">
+      <h2 id="confirmTitle">确认清理？ / Confirm cleanup?</h2>
+      <p class="warn-text">以下文件将被删除（临时文件 / 回收站 / 应用缓存走回收站可恢复）。此操作不可撤销！</p>
+      <p class="en warn-text">The following will be deleted (temp/recycle/app cache go to Recycle Bin). This cannot be undone!</p>
+      <ul id="confirmList" class="confirm-list"></ul>
+      <p class="confirm-total">预计释放 / Estimated free: <strong id="confirmTotal">—</strong></p>
+      <div class="modal-actions">
+        <button id="cancelBtn" class="btn ghost">取消 / Cancel</button>
+        <button id="confirmBtn" class="btn danger">确认删除 / Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
