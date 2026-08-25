@@ -28,7 +28,7 @@ A Windows disk cleanup tool built with pywebview + Python, UI inspired by Micros
 
 ## 赞赏支持 / Donate
 
-如果你觉得这个工具对你有帮助，欢迎赞赏支持后续更新免费 AI 工具实测库。
+如果你觉得这个工具对你有帮助，欢迎赞赏支持。
 
 ![赞赏码](src/gui/assets/donate.png)
 
