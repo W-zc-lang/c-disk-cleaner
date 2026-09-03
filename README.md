@@ -1,8 +1,28 @@
-# 系统存储空间管理 / System Storage Manager
+# 🧹 C 盘清理工具 · System Storage Manager
 
-一个基于 pywebview + Python 的 Windows 磁盘清理工具，界面参考微软电脑管家的「系统存储空间管理」。
+> Windows 磁盘清理工具，界面参考微软电脑管家的「系统存储空间管理」。一键扫描系统垃圾、应用缓存、大文件与重复文件，**安全释放 C 盘空间**。
 
-A Windows disk cleanup tool built with pywebview + Python, UI inspired by Microsoft PC Manager's "System Storage Space Management".
+[![Platform](https://img.shields.io/badge/Platform-Windows-blue)](https://github.com/W-zc-lang/c-disk-cleaner)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/W-zc-lang/c-disk-cleaner)](https://github.com/W-zc-lang/c-disk-cleaner/releases)
+
+## ✨ 功能
+
+- **磁盘概览**：各磁盘已用/可用空间，分类彩色容量条
+- **深度清理**：系统临时文件、回收站、浏览器缓存、更新缓存与 WinSxS、常见应用缓存
+- **大文件扫描**：按磁盘扫描，阈值可自定义（默认 1GB）
+- **重复文件**：按大小 + MD5 分组，逐条勾选删除
+
+## 🚀 下载
+
+👉 **[GitHub Releases 下载](https://github.com/W-zc-lang/c-disk-cleaner/releases)**
+
+## ☕ 支持
+
+点个 **Star** ⭐ 支持作者。
+
+---
+
 
 ## 功能 / Features
 
